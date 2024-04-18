@@ -1,3 +1,4 @@
+#pragma GCC optimize("Ofast")
 #include <cstdio>
 #include <cstring>
 #include <hardware/flash.h>
@@ -32,7 +33,7 @@ bool reboot = false;
 semaphore vga_start_semaphore;
 
 alignas(4) uint8_t SCREEN[240][320];
-alignas(4) int16_t audio_buffer[AUDIO_BUFFER_LENGTH * 2];
+alignas(4) int16_t audio_buffer[AUDIO_BUFFER_LENGTH];
 
 struct input_bits_t {
     bool a: true;
@@ -650,7 +651,6 @@ void __time_critical_func(render_core)() {
             nespad_tick();
 
             last_frame_tick = tick;
-
         }
 
         tick = time_us_64();
@@ -692,7 +692,7 @@ int main() {
         gpio_put(PICO_DEFAULT_LED_PIN, false);
     }
 
-    gAudioBuffer = audio_buffer;
+    gAudioBuffer = (uint16_t *)audio_buffer;
     gAudioEnabled = true;
     gPrimaryFrameBuffer = (uint8_t *) SCREEN;
     for (int i = 0; i < 256; i++) {
@@ -710,9 +710,12 @@ int main() {
 
 
         frame = 0;
-        uint8_t buttons = 0;
         while (!reboot) {
-            buttons = 0;
+            if ((gamepad1_bits.start && gamepad1_bits.select) || (keyboard_bits.start && keyboard_bits.select)) {
+                menu();
+            }
+
+            uint8_t buttons = 0;
             if (gamepad1_bits.left || keyboard_bits.left) buttons |= BUTTON_LEFT;
             if (gamepad1_bits.right || keyboard_bits.right) buttons |= BUTTON_RIGHT;
             if (gamepad1_bits.up || keyboard_bits.up) buttons |= BUTTON_UP;
@@ -721,11 +724,10 @@ int main() {
             if (gamepad1_bits.b  || keyboard_bits.b) buttons |= BUTTON_B;
             if (gamepad1_bits.start  || keyboard_bits.start) buttons |= BUTTON_OPT2;
             if (gamepad1_bits.select  || keyboard_bits.select) buttons |= BUTTON_OPT1;
+
             lynx->SetButtonData(buttons);
-            if ((gamepad1_bits.start && gamepad1_bits.select) || (keyboard_bits.start && keyboard_bits.select)) {
-                menu();
-            }
             lynx->UpdateFrame(true);
+            i2s_dma_write(&i2s_config, (const int16_t *) gAudioBuffer);
 
             frame++;
             if (1) {
@@ -737,7 +739,7 @@ int main() {
                     frame_cnt = 0;
                 }
             }
-            i2s_dma_write(&i2s_config, (const int16_t *) audio_buffer);
+
             tight_loop_contents();
         }
         lynx->Reset();

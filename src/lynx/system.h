@@ -69,8 +69,8 @@ typedef uint32_t ULONG2;
 
 #define HANDY_SYSTEM_FREQ                       16000000
 #define HANDY_TIMER_FREQ                        20
-#define HANDY_AUDIO_SAMPLE_FREQ                 48000
-#define HANDY_AUDIO_SAMPLE_PERIOD               (HANDY_SYSTEM_FREQ/HANDY_AUDIO_SAMPLE_FREQ)
+#define HANDY_AUDIO_SAMPLE_FREQ                 44100
+#define HANDY_AUDIO_SAMPLE_PERIOD               ((HANDY_SYSTEM_FREQ/HANDY_AUDIO_SAMPLE_FREQ))
 
 // for a bit over one frame of 16bit stereo
 #define HANDY_AUDIO_BUFFER_LENGTH               ((HANDY_AUDIO_SAMPLE_FREQ/60+25)*2)
@@ -117,7 +117,7 @@ extern ULONG2    gTimerCount;
 extern ULONG2    gRenderFrame;
 
 extern ULONG2    gAudioEnabled;
-extern SWORD    *gAudioBuffer;
+extern UWORD    *gAudioBuffer;
 extern ULONG2    gAudioBufferPointer;
 extern ULONG2    gAudioLastUpdateCycle;
 extern UBYTE    *gPrimaryFrameBuffer;

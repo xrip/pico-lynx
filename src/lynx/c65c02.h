@@ -1,3 +1,4 @@
+#pragma GCC optimize("Ofast")
 //
 // Copyright (c) 2004 K. Wilkins
 //

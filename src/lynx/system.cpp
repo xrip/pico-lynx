@@ -79,7 +79,7 @@ ULONG2   gTimerCount=0;
 ULONG2   gRenderFrame=1;
 
 ULONG2   gAudioEnabled=FALSE;
-SWORD   *gAudioBuffer;//[HANDY_AUDIO_BUFFER_SIZE];
+UWORD   *gAudioBuffer;//[HANDY_AUDIO_BUFFER_SIZE];
 ULONG2   gAudioBufferPointer=0;
 ULONG2   gAudioLastUpdateCycle=0;
 UBYTE   *gPrimaryFrameBuffer=NULL;

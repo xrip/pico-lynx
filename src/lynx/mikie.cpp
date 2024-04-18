@@ -54,6 +54,7 @@
 #include "system.h"
 #include "mikie.h"
 #include "lynxdef.h"
+#include "audio.h"
 
 static inline ULONG2 GetLfsrNext(ULONG2 current)
 {
@@ -3371,14 +3372,13 @@ inline void CMikie::UpdateCalcSound(void)
       //					TRACE_MIKIE1("Update() - mAUDIO_3_LINKING = %012d",mAUDIO_3_LINKING);
    }
 }
-
 inline void CMikie::UpdateSound(void)
 {
    int samples = (gSystemCycleCount-gAudioLastUpdateCycle)/HANDY_AUDIO_SAMPLE_PERIOD;
    if (samples == 0) return;
 
-   int cur_lsample = 0;
-   int cur_rsample = 0;
+   unsigned int cur_lsample = 0;
+   unsigned int cur_rsample = 0;
 
    for(int x = 0; x < 4; x++){
       /// Assumption (seems there is no documentation for the Attenuation registers)
@@ -3391,26 +3391,25 @@ inline void CMikie::UpdateSound(void)
 
       if(!(mSTEREO & (0x10 << x))) {
          if(mPAN & (0x10 << x))
-            cur_lsample += (mAUDIO_OUTPUT[x]*(mAUDIO_ATTEN[x]&0xF0))/(16*16); /// NOT /15*16 see remark above
+            cur_lsample += (mAUDIO_OUTPUT[x]*(mAUDIO_ATTEN[x]&0xF0)) / (16*16); /// NOT /15*16 see remark above
          else
             cur_lsample += mAUDIO_OUTPUT[x];
       }
       if(!(mSTEREO & (0x01 << x))) {
          if(mPAN & (0x01 << x))
-            cur_rsample += (mAUDIO_OUTPUT[x]*(mAUDIO_ATTEN[x]&0x0F))/16; /// NOT /15 see remark above
+            cur_rsample += (mAUDIO_OUTPUT[x]*(mAUDIO_ATTEN[x]&0x0F)) / 16; /// NOT /15 see remark above
          else
             cur_rsample += mAUDIO_OUTPUT[x];
       }
    }
 
-   SWORD sample_l = (cur_lsample << 5);
-   SWORD sample_r = (cur_rsample << 5);
 
    for(; samples > 0; --samples)
    {
-      gAudioBuffer[gAudioBufferPointer++] = sample_l;
-      gAudioBuffer[gAudioBufferPointer++] = sample_r;
+      gAudioBuffer[gAudioBufferPointer++] = cur_lsample << 5;
+      gAudioBuffer[gAudioBufferPointer++] = cur_rsample << 5;
       gAudioBufferPointer %= HANDY_AUDIO_BUFFER_LENGTH;
       gAudioLastUpdateCycle += HANDY_AUDIO_SAMPLE_PERIOD;
    }
+
 }
