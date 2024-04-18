@@ -1011,6 +1011,7 @@ static bool __time_critical_func(video_timer_callbackTV)(repeating_timer_t* rt) 
                         }
                         break;
                         case GRAPHICSMODE_DEFAULT:
+                            y = line_active / 2;
                             if (y < graphics_buffer.shift_y || y >= graphics_buffer.height+graphics_buffer.shift_y) {
                                 for (int i = 0; i < video_mode.img_W - d_end; i++) {
                                     uint32_t cout32 = conv_color[li][0];
@@ -1019,11 +1020,8 @@ static bool __time_critical_func(video_timer_callbackTV)(repeating_timer_t* rt) 
                                 }
                             } else {
                                 //для 8-битного буфера
-                                uint8_t* input_buffer8 = input_buffer + (y-graphics_buffer.shift_y) * (16 + 320 + 16);
+                                uint8_t* input_buffer8 = input_buffer + (y-graphics_buffer.shift_y) * graphics_buffer.width;
 
-                                if (graphics_buffer.width == 320) {
-                                    input_buffer8 += 16;
-                                }
                                 // todo bgcolor
                                 uint8_t color = graphics_buffer.shift_x ? 0 : *input_buffer8++;
                                 uint32_t cout32 = conv_color[li][color];
@@ -1047,7 +1045,7 @@ static bool __time_critical_func(video_timer_callbackTV)(repeating_timer_t* rt) 
                                             color = 0;
                                         }
                                         cout32 = conv_color[li][color];
-                                        next_ibuf += 0x100;
+                                        next_ibuf += 512;//0x100;
                                     }
                                 }
                             }
