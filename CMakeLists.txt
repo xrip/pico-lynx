@@ -130,7 +130,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         hardware_flash
 
 #		tinyusb_board
-#		tinyusb_device
+		tinyusb_device
 )
 target_compile_definitions(${PROJECT_NAME} PRIVATE
 		PICO_FLASH_SIZE_BYTES=16777216
