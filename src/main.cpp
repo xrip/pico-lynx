@@ -7,6 +7,7 @@
 #include <pico/stdlib.h>
 
 #include <graphics.h>
+#include <hardware/watchdog.h>
 #include "audio.h"
 
 #include "nespad.h"
@@ -31,8 +32,8 @@ static uint32_t __uninitialized_ram(rom_size);
 static FATFS fs;
 bool reboot = false;
 semaphore vga_start_semaphore;
-
-alignas(4) uint8_t SCREEN[240][320];
+CSystem *lynx;
+alignas(4) uint8_t SCREEN[200][320];
 alignas(4) int16_t audio_buffer[AUDIO_BUFFER_LENGTH];
 
 struct input_bits_t {
@@ -115,7 +116,7 @@ typedef struct __attribute__((__packed__)) {
     char filename[79];
 } file_item_t;
 
-constexpr int max_files = 500;
+constexpr int max_files = 600;
 file_item_t *fileItems = (file_item_t *) (&SCREEN[0][0] + TEXTMODE_COLS * TEXTMODE_ROWS * 2);
 
 int compareFileItems(const void *a, const void *b) {
@@ -443,8 +444,9 @@ bool save() {
     fr = f_open(&fd, pathname, FA_CREATE_ALWAYS | FA_WRITE);
     UINT bytes_writen;
 
+    lynx->ContextSave(&fd);
     //    supervision_save_state_buf((uint8*)data, (uint32)size);
-    //    f_write(&fd, data, size, &bytes_writen);
+//        f_write(&fd, data, size, &bytes_writen);
     f_close(&fd);
 
     return true;
@@ -465,7 +467,7 @@ bool load() {
     FIL fd;
     fr = f_open(&fd, pathname, FA_READ);
     UINT bytes_read;
-
+    lynx->ContextLoad(&fd);
     //    f_read(&fd, data, size, &bytes_read);
     //    supervision_load_state_buf((uint8*)data, (uint32)size);
     f_close(&fd);
@@ -503,9 +505,9 @@ const MenuItem menu_items[] = {
     {},
     //{ "Player 1: %s",        ARRAY, &player_1_input, 2, { "Keyboard ", "Gamepad 1", "Gamepad 2" }},
     //{ "Player 2: %s",        ARRAY, &player_2_input, 2, { "Keyboard ", "Gamepad 1", "Gamepad 2" }},
-    //        {},
-    //        { "Save state: %i", INT, &save_slot, &save, 5 },
-    //        { "Load state: %i", INT, &save_slot, &load, 5 },
+            {},
+            { "Save state: %i", INT, &save_slot, &save, 5 },
+            { "Load state: %i", INT, &save_slot, &load, 5 },
     {},
 #if SOFTTV
         { "TV system %s", ARRAY, &tv_out_mode.tv_system, nullptr, 1, { "PAL ", "NTSC" } },
@@ -666,7 +668,7 @@ void __time_critical_func(render_core)() {
 int frame, frame_cnt = 0;
 int frame_timer_start = 0;
 
-int main() {
+int __time_critical_func(main)() {
     overclock();
 
     //    stdio_init_all();
@@ -705,7 +707,7 @@ int main() {
     while (true) {
         graphics_set_mode(TEXTMODE_DEFAULT);
         filebrowser(HOME_DIR, "lnx,com,o");
-        CSystem *lynx = new CSystem((uint8_t *) rom, rom_size, MIKIE_PIXEL_FORMAT_16BPP_565, HANDY_AUDIO_SAMPLE_FREQ);
+        lynx = new CSystem((uint8_t *) rom, rom_size, MIKIE_PIXEL_FORMAT_16BPP_565, HANDY_AUDIO_SAMPLE_FREQ);
         graphics_set_mode(GRAPHICSMODE_DEFAULT);
 
 
@@ -727,12 +729,14 @@ int main() {
 
             lynx->SetButtonData(buttons);
             lynx->UpdateFrame(true);
-            i2s_dma_write(&i2s_config, (const int16_t *) gAudioBuffer);
+            static int16_t dma_buffer[AUDIO_BUFFER_LENGTH];
+            memcpy(dma_buffer, gAudioBuffer, AUDIO_BUFFER_LENGTH * 2);
+            i2s_dma_write(&i2s_config, (const int16_t *) dma_buffer);
 
             frame++;
-            if (1) {
-                if (++frame_cnt == 6) {
-                    while (time_us_64() - frame_timer_start < 16666 * 6) {
+            if (0) {
+                if (++frame_cnt == 8) {
+                    while (time_us_64() - frame_timer_start < 6666*15) {
                         //busy_wait_at_least_cycles(10);
                     } // 60 Hz
                     frame_timer_start = time_us_64();
@@ -742,7 +746,8 @@ int main() {
 
             tight_loop_contents();
         }
-        lynx->Reset();
+//        lynx->Reset();
+        watchdog_enable(1, false);
         reboot = false;
     }
     __unreachable();

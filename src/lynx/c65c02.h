@@ -1,4 +1,5 @@
 #pragma GCC optimize("Ofast")
+#include "pico/platform.h"
 //
 // Copyright (c) 2004 K. Wilkins
 //
@@ -223,7 +224,7 @@ class C65C02
          return 1;
       }
 
-      inline void Update(void)
+      inline void __time_critical_func(Update)(void)
       {
          //
          // NMI is currently unused by the lynx so lets save some time

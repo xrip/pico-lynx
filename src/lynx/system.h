@@ -51,6 +51,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include "ff.h"
 
 typedef int8_t SBYTE;
 typedef uint8_t UBYTE;
@@ -133,10 +134,14 @@ extern UBYTE    *gPrimaryFrameBuffer;
 // int lss_write(void* src, int varsize, int varcount, LSS_FILE *fp);
 // int lss_printf(LSS_FILE *fp, const char *str);
 
-#define LSS_FILE FILE
-#define lss_read(d, vs, vc, fp) (fread(d, vs, vc, fp) > 0)
-#define lss_write(s, vs, vc, fp) (fwrite(s, vs, vc, fp) > 0)
-#define lss_printf(fp, str) (fputs(str, fp) >= 0)
+static UINT  bytes_;
+#define LSS_FILE FIL
+//
+//    f_read(&fd, data, size, &bytes_read);
+#define lss_read(d, vs, vc, fp) (f_read(fp, d, vc*vs, &bytes_) == FR_OK)
+//    //    f_write(&fd, data, size, &bytes_writen);
+#define lss_write(s, vs, vc, fp) (f_write(fp, s, vc*vs, &bytes_) == FR_OK)
+#define lss_printf(fp, str) (f_write(fp, str, strlen(str), &bytes_) == FR_OK)
 
 //
 // Define logging functions

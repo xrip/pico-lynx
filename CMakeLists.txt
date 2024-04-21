@@ -181,7 +181,7 @@ target_link_options(${PROJECT_NAME} PRIVATE -Xlinker --print-memory-usage --data
 #		COMMAND arm-none-eabi-size --format=berkeley "../bin/Debug/${BUILD_NAME}.elf")
 
 pico_enable_stdio_uart(${PROJECT_NAME} 0)
-pico_enable_stdio_usb(${PROJECT_NAME} 1)
+pico_enable_stdio_usb(${PROJECT_NAME} 0)
 pico_add_extra_outputs(${PROJECT_NAME})
 
 

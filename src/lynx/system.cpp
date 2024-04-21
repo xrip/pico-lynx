@@ -396,7 +396,7 @@ bool CSystem::ContextLoad(LSS_FILE *fp)
       lss_read(&checksum, sizeof(ULONG2), 1, fp);
       if(mCart->CRC32()!=checksum) {
          log_printf("CSystem::ContextLoad() LSS Snapshot CRC does not match the loaded cartridge image...\n");
-         // return 0;
+         //return 0;
       }
 
       // Check our block header
@@ -442,7 +442,7 @@ bool CSystem::ContextLoad(LSS_FILE *fp)
    return status;
 }
 
-void CSystem::UpdateFrame(bool draw)
+void __time_critical_func(CSystem::UpdateFrame)(bool draw)
 {
    gEndOfFrame = FALSE;
    gRenderFrame = draw;

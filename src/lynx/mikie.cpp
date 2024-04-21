@@ -2247,7 +2247,7 @@ UBYTE CMikie::Peek(ULONG2 addr)
    return 0xff;
 }
 
-inline void CMikie::Update(void)
+inline void __time_critical_func(CMikie::Update)(void)
 {
    SLONG divide = 0;
    SLONG decval = 0;
