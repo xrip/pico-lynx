@@ -734,9 +734,9 @@ int __time_critical_func(main)() {
             i2s_dma_write(&i2s_config, (const int16_t *) dma_buffer);
 
             frame++;
-            if (0) {
-                if (++frame_cnt == 8) {
-                    while (time_us_64() - frame_timer_start < 6666*15) {
+            if (1) {
+                if (++frame_cnt == 6) {
+                    while (time_us_64() - frame_timer_start < 16666) {
                         //busy_wait_at_least_cycles(10);
                     } // 60 Hz
                     frame_timer_start = time_us_64();
