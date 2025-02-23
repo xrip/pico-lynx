@@ -2,7 +2,7 @@
 #include <cstdio>
 #include <cstring>
 #include <hardware/flash.h>
-#include <hardware/structs/vreg_and_chip_reset.h>
+#include <hardware/vreg.h>
 #include <pico/multicore.h>
 #include <pico/stdlib.h>
 
@@ -451,13 +451,24 @@ typedef struct __attribute__((__packed__)) {
 } MenuItem;
 
 int save_slot = 0;
-uint16_t frequencies[] = {378, 396, 404, 408, 412, 416, 420, 424, 432};
+uint16_t frequencies[] = {378, 396, 404, 408, 412, 416, 420, 424, 432, 444, 460};
 uint8_t frequency_index = 0;
 
 bool overclock() {
+#if !PICO_RP2040
+    volatile uint32_t *qmi_m0_timing=(uint32_t *)0x400d000c;
+    vreg_disable_voltage_limit();
+    vreg_set_voltage(VREG_VOLTAGE_1_60);
+    sleep_ms(33);
+    *qmi_m0_timing = 0x60007204;
+    bool res = set_sys_clock_khz(frequencies[frequency_index] * KHZ, 0);
+    *qmi_m0_timing = 0x60007303;
+    return res;
+#else
     hw_set_bits(&vreg_and_chip_reset_hw->vreg, VREG_AND_CHIP_RESET_VREG_VSEL_BITS);
     sleep_ms(10);
     return set_sys_clock_khz(frequencies[frequency_index] * KHZ, true);
+#endif
 }
 
 bool save() {
@@ -551,7 +562,7 @@ const MenuItem menu_items[] = {
 #endif
     {
         "Overclocking: %s MHz", ARRAY, &frequency_index, &overclock, count_of(frequencies) - 1,
-        {"378", "396", "404", "408", "412", "416", "420", "424", "432"}
+        {"378", "396", "404", "408", "412", "416", "420", "424", "432", "444", "460"}
     },
     {"Press START / Enter to apply", NONE},
     {"Reset to ROM select", ROM_SELECT},

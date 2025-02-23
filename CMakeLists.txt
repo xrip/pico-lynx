@@ -12,13 +12,12 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico CACHE STRING "Board type")
+set(PICO_BOARD pico2 CACHE STRING "Board type")
 
 cmake_minimum_required(VERSION 3.13)
 include(pico_sdk_import.cmake)
 
 project(lynx C CXX ASM)
-SET(BUILD_NAME "${PROJECT_NAME}")
 
 option(I2S "Enable I2S sound" OFF)
 option(I2S_CS4334 "Enable I2S CS4334 sound" OFF)
@@ -75,9 +74,15 @@ message(STATUS "")
 
 add_executable(${PROJECT_NAME} ${SRC})
 
-pico_define_boot_stage2(slower_boot2 ${PICO_DEFAULT_BOOT_STAGE2_FILE})
-target_compile_definitions(slower_boot2 PRIVATE PICO_FLASH_SPI_CLKDIV=4)
-pico_set_boot_stage2(${PROJECT_NAME} slower_boot2)
+if( ${PICO_BOARD} MATCHES "pico2" )
+	pico_set_linker_script(${PROJECT_NAME} "${CMAKE_SOURCE_DIR}/memmap.ld")
+	SET(BUILD_NAME "m1p2-${PROJECT_NAME}")
+else()
+	pico_define_boot_stage2(slower_boot2 ${PICO_DEFAULT_BOOT_STAGE2_FILE})
+	target_compile_definitions(slower_boot2 PRIVATE PICO_FLASH_SPI_CLKDIV=4)
+	pico_set_boot_stage2(${PROJECT_NAME} slower_boot2)
+	SET(BUILD_NAME "m1p1-${PROJECT_NAME}")
+endif()
 
 pico_set_program_name(lynx "lynx emulator by xrip for MURMULATOR devboard")
 pico_set_program_version(lynx "develop")
@@ -202,6 +207,3 @@ target_link_options(${PROJECT_NAME} PRIVATE -Xlinker --print-memory-usage --data
 pico_enable_stdio_uart(${PROJECT_NAME} 0)
 pico_enable_stdio_usb(${PROJECT_NAME} 0)
 pico_add_extra_outputs(${PROJECT_NAME})
-
-
-
