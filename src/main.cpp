@@ -250,10 +250,6 @@ void filebrowser(const char pathname[256], const char executables[11]) {
     DIR dir;
     FILINFO fileInfo;
 
-    if (FR_OK != f_mount(&fs, "SD", 1)) {
-        draw_text("SD Card not inserted or SD Card error!", 0, 0, 12, 0);
-        while (true);
-    }
     f_mkdir(HOME_DIR); // do nothing, in case exists
 
     while (true) {
@@ -463,10 +459,12 @@ bool overclock() {
     *qmi_m0_timing = 0x60007204;
     bool res = set_sys_clock_khz(frequencies[frequency_index] * KHZ, 0);
     *qmi_m0_timing = 0x60007303;
+    graphics_set_mode(TEXTMODE_DEFAULT);
     return res;
 #else
     hw_set_bits(&vreg_and_chip_reset_hw->vreg, VREG_AND_CHIP_RESET_VREG_VSEL_BITS);
     sleep_ms(10);
+    graphics_set_mode(TEXTMODE_DEFAULT);
     return set_sys_clock_khz(frequencies[frequency_index] * KHZ, true);
 #endif
 }
@@ -482,9 +480,8 @@ bool save() {
         sprintf(pathname, "%s\\%s.save", HOME_DIR, filename);
     }
 
-    FRESULT fr = f_mount(&fs, "", 1);
     FIL fd;
-    fr = f_open(&fd, pathname, FA_CREATE_ALWAYS | FA_WRITE);
+    FRESULT fr = f_open(&fd, pathname, FA_CREATE_ALWAYS | FA_WRITE);
     UINT bytes_writen;
 
     lynx->ContextSave(&fd);
@@ -506,9 +503,8 @@ bool load() {
         sprintf(pathname, "%s\\%s.save", HOME_DIR, filename);
     }
 
-    FRESULT fr = f_mount(&fs, "", 1);
     FIL fd;
-    fr = f_open(&fd, pathname, FA_READ);
+    FRESULT fr = f_open(&fd, pathname, FA_READ);
     UINT bytes_read;
     lynx->ContextLoad(&fd);
     //    f_read(&fd, data, size, &bytes_read);
@@ -720,6 +716,7 @@ int __time_critical_func(main)() {
     multicore_launch_core1(render_core);
     sem_release(&vga_start_semaphore);
 
+    f_mount(&fs, "SD", 1);
 
     i2s_config = i2s_get_default_config();
     i2s_config.sample_freq = AUDIO_SAMPLE_RATE;

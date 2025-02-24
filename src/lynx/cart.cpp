@@ -245,7 +245,8 @@ bool CCart::ContextSave(LSS_FILE *fp)
    if(!lss_write(&mCartRAM, sizeof(ULONG2), 1, fp)) return 0;
    if(mCartRAM) {
       if(!lss_write(&mMaskBank1, sizeof(ULONG2), 1, fp)) return 0;
-      if(!lss_write(mCartBank1,sizeof(UBYTE),mMaskBank1+1,fp)) return 0;
+      f_lseek(fp, f_tell(fp) + mMaskBank1 + 1);
+      ///      if(!lss_write(mCartBank1, sizeof(UBYTE), mMaskBank1+1, fp)) return 0;
    }
    return 1;
 }
@@ -273,7 +274,8 @@ bool CCart::ContextLoad(LSS_FILE *fp)
       if(!lss_read(&mMaskBank1, sizeof(ULONG2), 1, fp)) return 0;
 //      delete[] mCartBank1;
 //      mCartBank1 = new UBYTE[mMaskBank1+1];
-      if(!lss_read(mCartBank1,sizeof(UBYTE),mMaskBank1+1,fp)) return 0;
+      f_lseek(fp, f_tell(fp) + mMaskBank1 + 1);
+///   if(!lss_read(mCartBank1,sizeof(UBYTE),mMaskBank1+1,fp)) return 0;
    }
    return 1;
 }
