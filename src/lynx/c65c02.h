@@ -1,4 +1,5 @@
 #pragma GCC optimize("Ofast")
+#include "pico.h"
 #include "pico/platform.h"
 //
 // Copyright (c) 2004 K. Wilkins

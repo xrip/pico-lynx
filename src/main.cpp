@@ -2,7 +2,7 @@
 #include <cstdio>
 #include <cstring>
 #include <hardware/flash.h>
-#include <hardware/structs/vreg_and_chip_reset.h>
+#include <hardware/vreg.h>
 #include <pico/multicore.h>
 #include <pico/stdlib.h>
 
@@ -82,22 +82,53 @@ static bool isInReport(hid_keyboard_report_t const *report, const unsigned char 
     return false;
 }
 
+static volatile bool altPressed = false;
+static volatile bool ctrlPressed = false;
+static volatile uint8_t fxPressedV = 0;
+
 void process_kbd_report(hid_keyboard_report_t const *report, hid_keyboard_report_t const *prev_report) {
     /* printf("HID key report modifiers %2.2X report ", report->modifier);
     for (unsigned char i: report->keycode)
         printf("%2.2X", i);
     printf("\r\n");
      */
-    keyboard_bits.start = isInReport(report, HID_KEY_ENTER);
-    keyboard_bits.select = isInReport(report, HID_KEY_BACKSPACE) || isInReport(report, HID_KEY_ESCAPE);
+    keyboard_bits.start = isInReport(report, HID_KEY_ENTER) || isInReport(report, HID_KEY_KEYPAD_ENTER);
+    keyboard_bits.select = isInReport(report, HID_KEY_BACKSPACE) || isInReport(report, HID_KEY_ESCAPE) || isInReport(report, HID_KEY_KEYPAD_ADD);
 
-    keyboard_bits.a = isInReport(report, HID_KEY_Z) || isInReport(report, HID_KEY_O);
-    keyboard_bits.b = isInReport(report, HID_KEY_X) || isInReport(report, HID_KEY_P);
+    keyboard_bits.a = isInReport(report, HID_KEY_Z) || isInReport(report, HID_KEY_O) || isInReport(report, HID_KEY_KEYPAD_0);
+    keyboard_bits.b = isInReport(report, HID_KEY_X) || isInReport(report, HID_KEY_P) || isInReport(report, HID_KEY_KEYPAD_DECIMAL);
 
-    keyboard_bits.up = isInReport(report, HID_KEY_ARROW_UP) || isInReport(report, HID_KEY_W);
-    keyboard_bits.down = isInReport(report, HID_KEY_ARROW_DOWN) || isInReport(report, HID_KEY_S);
-    keyboard_bits.left = isInReport(report, HID_KEY_ARROW_LEFT) || isInReport(report, HID_KEY_A);
-    keyboard_bits.right = isInReport(report, HID_KEY_ARROW_RIGHT) || isInReport(report, HID_KEY_D);
+    bool b7 = isInReport(report, HID_KEY_KEYPAD_7);
+    bool b9 = isInReport(report, HID_KEY_KEYPAD_9);
+    bool b1 = isInReport(report, HID_KEY_KEYPAD_1);
+    bool b3 = isInReport(report, HID_KEY_KEYPAD_3);
+
+    keyboard_bits.up = b7 || b9 || isInReport(report, HID_KEY_ARROW_UP) || isInReport(report, HID_KEY_W) || isInReport(report, HID_KEY_KEYPAD_8);
+    keyboard_bits.down = b1 || b3 || isInReport(report, HID_KEY_ARROW_DOWN) || isInReport(report, HID_KEY_S) || isInReport(report, HID_KEY_KEYPAD_2) || isInReport(report, HID_KEY_KEYPAD_5);
+    keyboard_bits.left = b7 || b1 || isInReport(report, HID_KEY_ARROW_LEFT) || isInReport(report, HID_KEY_A) || isInReport(report, HID_KEY_KEYPAD_4);
+    keyboard_bits.right = b9 || b3 || isInReport(report, HID_KEY_ARROW_RIGHT)  || isInReport(report, HID_KEY_D) || isInReport(report, HID_KEY_KEYPAD_6);
+
+    altPressed = isInReport(report, HID_KEY_ALT_LEFT) || isInReport(report, HID_KEY_ALT_RIGHT);
+    ctrlPressed = isInReport(report, HID_KEY_CONTROL_LEFT) || isInReport(report, HID_KEY_CONTROL_RIGHT);
+    
+    if (altPressed && ctrlPressed && isInReport(report, HID_KEY_DELETE)) {
+        watchdog_enable(10, true);
+        while(true) {
+            tight_loop_contents();
+        }
+    }
+    if (ctrlPressed || altPressed) {
+        uint8_t fxPressed = 0;
+        if (isInReport(report, HID_KEY_F1)) fxPressed = 1;
+        else if (isInReport(report, HID_KEY_F2)) fxPressed = 2;
+        else if (isInReport(report, HID_KEY_F3)) fxPressed = 3;
+        else if (isInReport(report, HID_KEY_F4)) fxPressed = 4;
+        else if (isInReport(report, HID_KEY_F5)) fxPressed = 5;
+        else if (isInReport(report, HID_KEY_F6)) fxPressed = 6;
+        else if (isInReport(report, HID_KEY_F7)) fxPressed = 7;
+        else if (isInReport(report, HID_KEY_F8)) fxPressed = 8;
+        fxPressedV = fxPressed;
+    }
     //-------------------------------------------------------------------------
 }
 
@@ -219,10 +250,7 @@ void filebrowser(const char pathname[256], const char executables[11]) {
     DIR dir;
     FILINFO fileInfo;
 
-    if (FR_OK != f_mount(&fs, "SD", 1)) {
-        draw_text("SD Card not inserted or SD Card error!", 0, 0, 12, 0);
-        while (true);
-    }
+    f_mkdir(HOME_DIR); // do nothing, in case exists
 
     while (true) {
         memset(fileItems, 0, sizeof(file_item_t) * max_files);
@@ -419,13 +447,26 @@ typedef struct __attribute__((__packed__)) {
 } MenuItem;
 
 int save_slot = 0;
-uint16_t frequencies[] = {378, 396, 404, 408, 412, 416, 420, 424, 432};
+uint16_t frequencies[] = {378, 396, 404, 408, 412, 416, 420, 424, 432, 444, 460};
 uint8_t frequency_index = 0;
 
 bool overclock() {
+#if !PICO_RP2040
+    volatile uint32_t *qmi_m0_timing=(uint32_t *)0x400d000c;
+    vreg_disable_voltage_limit();
+    vreg_set_voltage(VREG_VOLTAGE_1_60);
+    sleep_ms(33);
+    *qmi_m0_timing = 0x60007204;
+    bool res = set_sys_clock_khz(frequencies[frequency_index] * KHZ, 0);
+    *qmi_m0_timing = 0x60007303;
+    graphics_set_mode(TEXTMODE_DEFAULT);
+    return res;
+#else
     hw_set_bits(&vreg_and_chip_reset_hw->vreg, VREG_AND_CHIP_RESET_VREG_VSEL_BITS);
     sleep_ms(10);
+    graphics_set_mode(TEXTMODE_DEFAULT);
     return set_sys_clock_khz(frequencies[frequency_index] * KHZ, true);
+#endif
 }
 
 bool save() {
@@ -439,9 +480,8 @@ bool save() {
         sprintf(pathname, "%s\\%s.save", HOME_DIR, filename);
     }
 
-    FRESULT fr = f_mount(&fs, "", 1);
     FIL fd;
-    fr = f_open(&fd, pathname, FA_CREATE_ALWAYS | FA_WRITE);
+    FRESULT fr = f_open(&fd, pathname, FA_CREATE_ALWAYS | FA_WRITE);
     UINT bytes_writen;
 
     lynx->ContextSave(&fd);
@@ -463,9 +503,8 @@ bool load() {
         sprintf(pathname, "%s\\%s.save", HOME_DIR, filename);
     }
 
-    FRESULT fr = f_mount(&fs, "", 1);
     FIL fd;
-    fr = f_open(&fd, pathname, FA_READ);
+    FRESULT fr = f_open(&fd, pathname, FA_READ);
     UINT bytes_read;
     lynx->ContextLoad(&fd);
     //    f_read(&fd, data, size, &bytes_read);
@@ -519,7 +558,7 @@ const MenuItem menu_items[] = {
 #endif
     {
         "Overclocking: %s MHz", ARRAY, &frequency_index, &overclock, count_of(frequencies) - 1,
-        {"378", "396", "404", "408", "412", "416", "420", "424", "432"}
+        {"378", "396", "404", "408", "412", "416", "420", "424", "432", "444", "460"}
     },
     {"Press START / Enter to apply", NONE},
     {"Reset to ROM select", ROM_SELECT},
@@ -677,6 +716,7 @@ int __time_critical_func(main)() {
     multicore_launch_core1(render_core);
     sem_release(&vga_start_semaphore);
 
+    f_mount(&fs, "SD", 1);
 
     i2s_config = i2s_get_default_config();
     i2s_config.sample_freq = AUDIO_SAMPLE_RATE;
@@ -715,6 +755,15 @@ int __time_critical_func(main)() {
         while (!reboot) {
             if ((gamepad1_bits.start && gamepad1_bits.select) || (keyboard_bits.start && keyboard_bits.select)) {
                 menu();
+            }
+            if (fxPressedV) {
+                if (altPressed) {
+                    save_slot = fxPressedV;
+                    load();
+                } else if (ctrlPressed) {
+                    save_slot = fxPressedV;
+                    save();
+                }
             }
 
             uint8_t buttons = 0;

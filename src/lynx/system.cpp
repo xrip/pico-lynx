@@ -375,7 +375,6 @@ bool CSystem::ContextSave(LSS_FILE *fp)
    if(!mSusie->ContextSave(fp)) status=0;
    if(!mCpu->ContextSave(fp)) status=0;
    if(!mEEPROM->ContextSave(fp)) status=0;
-
    return status;
 }
 
