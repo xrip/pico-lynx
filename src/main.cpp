@@ -51,8 +51,34 @@ static input_bits_t keyboard_bits = {false, false, false, false, false, false, f
 static input_bits_t gamepad1_bits = {false, false, false, false, false, false, false, false};
 static input_bits_t gamepad2_bits = {false, false, false, false, false, false, false, false};
 
+static uint8_t frequency_index = 0;
 static bool swap_ab = false;
 
+void load_config() {
+    FIL file;
+    char pathname[256];
+    sprintf(pathname, "%s\\emulator.cfg", HOME_DIR);
+
+    if (FR_OK == f_mount(&fs, "", 1) && FR_OK == f_open(&file, pathname, FA_READ)) {
+        UINT bytes_read;
+        f_read(&file, &swap_ab, sizeof(swap_ab), &bytes_read);
+//        f_read(&file, &frequency_index, sizeof(frequency_index), &bytes_read);
+        f_close(&file);
+    }
+}
+
+void save_config() {
+    FIL file;
+    char pathname[256];
+    sprintf(pathname, "%s\\emulator.cfg", HOME_DIR);
+
+    if (FR_OK == f_mount(&fs, "", 1) && FR_OK == f_open(&file, pathname, FA_CREATE_ALWAYS | FA_WRITE)) {
+        UINT bytes_writen;
+        f_write(&file, &swap_ab, sizeof(swap_ab), &bytes_writen);
+//        f_write(&file, &frequency_index, sizeof(frequency_index), &bytes_writen);
+        f_close(&file);
+    }
+}
 
 static void nespad_tick() {
     nespad_read();
@@ -95,8 +121,13 @@ void process_kbd_report(hid_keyboard_report_t const *report, hid_keyboard_report
     keyboard_bits.start = isInReport(report, HID_KEY_ENTER) || isInReport(report, HID_KEY_KEYPAD_ENTER);
     keyboard_bits.select = isInReport(report, HID_KEY_BACKSPACE) || isInReport(report, HID_KEY_ESCAPE) || isInReport(report, HID_KEY_KEYPAD_ADD);
 
-    keyboard_bits.a = isInReport(report, HID_KEY_Z) || isInReport(report, HID_KEY_O) || isInReport(report, HID_KEY_KEYPAD_0);
-    keyboard_bits.b = isInReport(report, HID_KEY_X) || isInReport(report, HID_KEY_P) || isInReport(report, HID_KEY_KEYPAD_DECIMAL);
+    if (swap_ab) {
+        keyboard_bits.a = isInReport(report, HID_KEY_Z) || isInReport(report, HID_KEY_O) || isInReport(report, HID_KEY_KEYPAD_0);
+        keyboard_bits.b = isInReport(report, HID_KEY_X) || isInReport(report, HID_KEY_P) || isInReport(report, HID_KEY_KEYPAD_DECIMAL);
+    } else {
+        keyboard_bits.b = isInReport(report, HID_KEY_Z) || isInReport(report, HID_KEY_O) || isInReport(report, HID_KEY_KEYPAD_0);
+        keyboard_bits.a = isInReport(report, HID_KEY_X) || isInReport(report, HID_KEY_P) || isInReport(report, HID_KEY_KEYPAD_DECIMAL);
+    }
 
     bool b7 = isInReport(report, HID_KEY_KEYPAD_7);
     bool b9 = isInReport(report, HID_KEY_KEYPAD_9);
@@ -448,7 +479,6 @@ typedef struct __attribute__((__packed__)) {
 
 int save_slot = 0;
 uint16_t frequencies[] = {378, 396, 404, 408, 412, 416, 420, 424, 432, 444, 460};
-uint8_t frequency_index = 0;
 
 bool overclock() {
 #if !PICO_RP2040
@@ -610,6 +640,7 @@ void menu() {
                     case ROM_SELECT:
                         if (gamepad1_bits.start || keyboard_bits.start) {
                             reboot = true;
+                            save_config();
                             return;
                         }
                         break;
@@ -657,6 +688,7 @@ void menu() {
     }
 
     graphics_set_mode(GRAPHICSMODE_DEFAULT);
+    save_config();
 }
 
 /* Renderer loop on Pico's second core */
@@ -708,15 +740,13 @@ int frame, frame_cnt = 0;
 int frame_timer_start = 0;
 
 int __time_critical_func(main)() {
+    f_mount(&fs, "SD", 1);
+    load_config();
     overclock();
-
-    //    stdio_init_all();
 
     sem_init(&vga_start_semaphore, 0, 1);
     multicore_launch_core1(render_core);
     sem_release(&vga_start_semaphore);
-
-    f_mount(&fs, "SD", 1);
 
     i2s_config = i2s_get_default_config();
     i2s_config.sample_freq = AUDIO_SAMPLE_RATE;
