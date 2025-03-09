@@ -12,9 +12,12 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico CACHE STRING "Board type")
-
 cmake_minimum_required(VERSION 3.13)
+set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards )
+set(PICO_PLATFORM "rp2350" CACHE STRING "Chip type")
+#set(PICO_PLATFORM "rp2040" CACHE STRING "Chip type")
+#set(PICO_BOARD "murmulator" CACHE STRING "Board type")
+set(PICO_BOARD "murmulator2" CACHE STRING "Board type")
 include(pico_sdk_import.cmake)
 
 project(lynx C CXX ASM)
@@ -27,8 +30,12 @@ option(ILI9341 "Enable TFT ILI9341 display" OFF)
 option(HDMI "Enable HDMI display" OFF)
 option(TV "Enable TV composite output" OFF)
 option(SOFTTV "Enable TV soft composite output" OFF)
+if( ${PICO_PLATFORM} MATCHES "rp2350" )
+option(m1p2launcher "Enable m1p2-launcher support" OFF)
+endif()
 
-#set(I2S ON)
+#set(m1p2launcher ON)
+set(I2S ON)
 #set(TFT ON)
 #set(ILI9341 ON)
 #set(HDMI ON)
@@ -74,18 +81,32 @@ message(STATUS "")
 
 add_executable(${PROJECT_NAME} ${SRC})
 
-if( ${PICO_BOARD} MATCHES "pico2" )
-	pico_set_linker_script(${PROJECT_NAME} "${CMAKE_SOURCE_DIR}/memmap.ld")
-	SET(BUILD_NAME "m1p2-${PROJECT_NAME}")
-else()
+if( ${PICO_PLATFORM} MATCHES "rp2040" )
 	pico_define_boot_stage2(slower_boot2 ${PICO_DEFAULT_BOOT_STAGE2_FILE})
 	target_compile_definitions(slower_boot2 PRIVATE PICO_FLASH_SPI_CLKDIV=4)
 	pico_set_boot_stage2(${PROJECT_NAME} slower_boot2)
-	SET(BUILD_NAME "m1p1-${PROJECT_NAME}")
+	if ( ${PICO_BOARD} MATCHES "murmulator2")
+		SET(BUILD_NAME "m2p1-${PROJECT_NAME}")
+	else()
+		SET(BUILD_NAME "m1p1-${PROJECT_NAME}")
+	endif()
+else()
+    if (m1p2launcher)
+		pico_set_linker_script(${PROJECT_NAME} "${CMAKE_SOURCE_DIR}/memmap.ld")
+	endif()
+	if ( ${PICO_BOARD} MATCHES "murmulator2")
+		SET(BUILD_NAME "m2p2-${PROJECT_NAME}")
+	else()
+		SET(BUILD_NAME "m1p2-${PROJECT_NAME}")
+	endif()
 endif()
 
-pico_set_program_name(lynx "lynx emulator by xrip for MURMULATOR devboard")
-pico_set_program_version(lynx "develop")
+if ( ${PICO_BOARD} MATCHES "murmulator2")
+pico_set_program_name(lynx "Atari Lynx emulator by xrip for MURMULATOR 2.0 board")
+else()
+pico_set_program_name(lynx "Atari Lynx emulator by xrip for MURMULATOR 1.x board")
+endif()
+pico_set_program_version(lynx "2.1.3")
 
 #include_directories()
 include_directories(${PROJECT_NAME} PRIVATE src src/oswan)
@@ -120,7 +141,7 @@ ELSE()
 ENDIF()
 
 IF(NOT I2S)
-	target_compile_definitions(${PROJECT_NAME} PRIVATE AUDIO_PWM_PIN=26)
+	target_compile_definitions(${PROJECT_NAME} PRIVATE AUDIO_PWM)
 	SET(BUILD_NAME "${BUILD_NAME}-PWM")
 ELSEIF(I2S_CS4334)
 	target_compile_definitions(${PROJECT_NAME} PRIVATE I2S_CS4334)
@@ -156,49 +177,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 #		tinyusb_board
 		tinyusb_device
 )
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-		PICO_FLASH_SIZE_BYTES=16777216
-		# SDCARD
-		SDCARD_PIN_SPI0_CS=5
-		SDCARD_PIN_SPI0_SCK=2
-		SDCARD_PIN_SPI0_MOSI=3
-		SDCARD_PIN_SPI0_MISO=4
-
-		# PS2KBD
-		USE_PS2_KBD
-		PS2KBD_GPIO_FIRST=0
-
-		# NES Gamepad
-		USE_NESPAD
-		NES_GPIO_CLK=14
-		NES_GPIO_DATA=16
-		NES_GPIO_LAT=15
-
-		# VGA 8 pins starts from pin:
-		VGA_BASE_PIN=6
-
-		# HDMI 8 pins starts from pin:
-		HDMI_BASE_PIN=6
-
-		# TFT
-		TFT_CS_PIN=6
-		TFT_RST_PIN=8
-		TFT_LED_PIN=9
-		TFT_DC_PIN=10
-		TFT_DATA_PIN=12
-		TFT_CLK_PIN=13
-
-        PSRAM
-        # PSRAM_MUTEX=1
-        PSRAM_SPINLOCK=1
-        PSRAM_ASYNC=1
-
-        PSRAM_PIN_CS=18
-        PSRAM_PIN_SCK=19
-        PSRAM_PIN_MOSI=20
-        PSRAM_PIN_MISO=21
-)
-
 
 target_link_options(${PROJECT_NAME} PRIVATE -Xlinker --print-memory-usage --data-sections --function-sections)
 #add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
