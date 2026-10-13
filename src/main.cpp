@@ -253,6 +253,38 @@ bool isExecutable(const char pathname[255], const char *extensions) {
     return false;
 }
 
+#if PICO_RP2350
+/* flash_range_erase/program end with the boot-time XIP setup (QSPI clock =
+ * clk_sys / PICO_FLASH_SPI_CLKDIV = clk_sys / 2) and flush the XIP cache, so
+ * the first fetch back in flash code would run the flash at 189 MHz when
+ * overclock() set 378 MHz: too fast for the z0p2 flash, the board hangs.
+ * Run the call and the restore of the overclock QMI timing from RAM. */
+static void __no_inline_not_in_flash_func(flash_erase_keep_qmi)(uint32_t offs, size_t count) {
+    const uint32_t timing = qmi_hw->m[0].timing;
+    const uint32_t rfmt   = qmi_hw->m[0].rfmt;
+    const uint32_t rcmd   = qmi_hw->m[0].rcmd;
+    flash_range_erase(offs, count);
+    qmi_hw->m[0].timing = timing;
+    qmi_hw->m[0].rfmt   = rfmt;
+    qmi_hw->m[0].rcmd   = rcmd;
+    __asm volatile ("dsb; isb" ::: "memory");
+}
+
+static void __no_inline_not_in_flash_func(flash_program_keep_qmi)(uint32_t offs, const uint8_t *data, size_t count) {
+    const uint32_t timing = qmi_hw->m[0].timing;
+    const uint32_t rfmt   = qmi_hw->m[0].rfmt;
+    const uint32_t rcmd   = qmi_hw->m[0].rcmd;
+    flash_range_program(offs, data, count);
+    qmi_hw->m[0].timing = timing;
+    qmi_hw->m[0].rfmt   = rfmt;
+    qmi_hw->m[0].rcmd   = rcmd;
+    __asm volatile ("dsb; isb" ::: "memory");
+}
+#else
+#define flash_erase_keep_qmi flash_range_erase
+#define flash_program_keep_qmi flash_range_program
+#endif
+
 bool filebrowser_loadfile(const char pathname[256]) {
     UINT bytes_read = 0;
     FIL file;
@@ -284,24 +316,9 @@ bool filebrowser_loadfile(const char pathname[256]) {
 
     multicore_lockout_start_blocking();
     auto flash_target_offset = FLASH_TARGET_OFFSET;
-#if PICO_RP2350
-    /* flash_range_erase/program leave XIP through the boot-time XIP setup,
-     * which restores the QMI window-0 timing chosen for the boot clock.
-     * overclock() runs the flash with its own timing at 378+ MHz, so the
-     * boot value would clock the flash far too fast afterwards and every
-     * XIP fetch would return garbage. Keep the overclock timing. */
-    const uint32_t qmi_timing = qmi_hw->m[0].timing;
-    const uint32_t qmi_rfmt   = qmi_hw->m[0].rfmt;
-    const uint32_t qmi_rcmd   = qmi_hw->m[0].rcmd;
-#define RESTORE_QMI() do { qmi_hw->m[0].timing = qmi_timing; qmi_hw->m[0].rfmt = qmi_rfmt; \
-                           qmi_hw->m[0].rcmd = qmi_rcmd; __asm volatile ("dsb; isb" ::: "memory"); } while (0)
-#else
-#define RESTORE_QMI() do { } while (0)
-#endif
     const uint32_t ints = save_and_disable_interrupts();
     /* erase whole sectors: the ROM size is rarely a multiple of 4 KB */
-    flash_range_erase(flash_target_offset, (fileinfo.fsize + FLASH_SECTOR_SIZE - 1) & ~(FLASH_SECTOR_SIZE - 1));
-    RESTORE_QMI();
+    flash_erase_keep_qmi(flash_target_offset, (fileinfo.fsize + FLASH_SECTOR_SIZE - 1) & ~(FLASH_SECTOR_SIZE - 1));
     restore_interrupts(ints);
 
     if (FR_OK == f_open(&file, pathname, FA_READ)) {
@@ -312,8 +329,7 @@ bool filebrowser_loadfile(const char pathname[256]) {
 
             if (bytes_read) {
                 const uint32_t ints = save_and_disable_interrupts();
-                flash_range_program(flash_target_offset, buffer, FLASH_PAGE_SIZE);
-                RESTORE_QMI();
+                flash_program_keep_qmi(flash_target_offset, buffer, FLASH_PAGE_SIZE);
                 restore_interrupts(ints);
 
                 gpio_put(PICO_DEFAULT_LED_PIN, flash_target_offset >> 13 & 1);
@@ -540,7 +556,7 @@ typedef struct __attribute__((__packed__)) {
 } MenuItem;
 
 int save_slot = 0;
-uint16_t frequencies[] = {378, 396, 404, 408, 412, 416, 420, 424, 432, 444, 460};
+uint16_t frequencies[] = {252, 378, 396, 404, 408, 412, 416, 420, 424, 432, 444, 460, 504};
 
 bool overclock() {
 #if !PICO_RP2040
@@ -650,7 +666,7 @@ const MenuItem menu_items[] = {
 #endif
     {
         "Overclocking: %s MHz", ARRAY, &frequency_index, &overclock, count_of(frequencies) - 1,
-        {"378", "396", "404", "408", "412", "416", "420", "424", "432", "444", "460"}
+        {"252", "378", "396", "404", "408", "412", "416", "420", "424", "432", "444", "460", "504"}
     },
     {"Press START / Enter to apply", NONE},
     {"Reset to ROM select", ROM_SELECT},
