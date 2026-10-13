@@ -265,8 +265,8 @@ bool filebrowser_loadfile(const char pathname[256]) {
     FILINFO fileinfo;
     f_stat(pathname, &fileinfo);
     rom_size = fileinfo.fsize;
-#ifdef PICO_PC
-    /* The ROM goes right after the firmware; the top 512 KB of the 4 MB flash
+#if defined(PICO_PC) || defined(BOARD_Z0)
+    /* The ROM goes right after the firmware; the top 512 KB of the flash
      * stay untouched (pico-launcher lives in the last 260 KB). */
     if (FLASH_TARGET_OFFSET + fileinfo.fsize > PICO_FLASH_SIZE_BYTES - (512u << 10)) {
 #else
