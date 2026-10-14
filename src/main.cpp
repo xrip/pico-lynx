@@ -3,6 +3,9 @@
 #include <cstring>
 #include <hardware/flash.h>
 #include <hardware/vreg.h>
+#if PICO_RP2350
+#include <hardware/structs/qmi.h>
+#endif
 #include <pico/multicore.h>
 #include <pico/stdlib.h>
 
@@ -53,6 +56,42 @@ static input_bits_t gamepad2_bits = {false, false, false, false, false, false, f
 
 static uint8_t frequency_index = 0;
 static bool swap_ab = false;
+
+/* Lynx frame pixels are 8-bit RRRGGGBB indices into the whole palette. The
+ * HDMI text mode draws its 16 colours through palette slots 200..215
+ * (textmode_palette in drivers/hdmi/hdmi.h), which the Lynx palette also
+ * owns, and slot 255 is the border/background colour: load CGA colours into
+ * 200..215 for text mode and put the Lynx colours back for graphics mode. */
+static uint32_t lynx_color(const int i) {
+    return RGB888((((i & 0xe0) >> 4) * 16),
+                  (((i & 0x1C) >> 1) * 16),
+                  (((i & 0x03) << 2) * 16));
+}
+
+#ifdef HDMI
+static const uint32_t text_colors[16] = {
+    0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xAA5500, 0xAAAAAA,
+    0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF,
+};
+
+static void set_text_colors() {
+    for (int i = 0; i < 16; i++)
+        graphics_set_palette(textmode_palette[i], text_colors[i]);
+}
+
+static void set_game_colors() {
+    for (int i = 0; i < 16; i++)
+        graphics_set_palette(textmode_palette[i], lynx_color(textmode_palette[i]));
+}
+#endif
+
+static void set_mode(const enum graphics_mode_t mode) {
+#ifdef HDMI
+    if (mode == GRAPHICSMODE_DEFAULT) set_game_colors();
+    else set_text_colors();
+#endif
+    graphics_set_mode(mode);
+}
 
 void load_config() {
     FIL file;
@@ -214,6 +253,38 @@ bool isExecutable(const char pathname[255], const char *extensions) {
     return false;
 }
 
+#if PICO_RP2350
+/* flash_range_erase/program end with the boot-time XIP setup (QSPI clock =
+ * clk_sys / PICO_FLASH_SPI_CLKDIV = clk_sys / 2) and flush the XIP cache, so
+ * the first fetch back in flash code would run the flash at 189 MHz when
+ * overclock() set 378 MHz: too fast for the z0p2 flash, the board hangs.
+ * Run the call and the restore of the overclock QMI timing from RAM. */
+static void __no_inline_not_in_flash_func(flash_erase_keep_qmi)(uint32_t offs, size_t count) {
+    const uint32_t timing = qmi_hw->m[0].timing;
+    const uint32_t rfmt   = qmi_hw->m[0].rfmt;
+    const uint32_t rcmd   = qmi_hw->m[0].rcmd;
+    flash_range_erase(offs, count);
+    qmi_hw->m[0].timing = timing;
+    qmi_hw->m[0].rfmt   = rfmt;
+    qmi_hw->m[0].rcmd   = rcmd;
+    __asm volatile ("dsb; isb" ::: "memory");
+}
+
+static void __no_inline_not_in_flash_func(flash_program_keep_qmi)(uint32_t offs, const uint8_t *data, size_t count) {
+    const uint32_t timing = qmi_hw->m[0].timing;
+    const uint32_t rfmt   = qmi_hw->m[0].rfmt;
+    const uint32_t rcmd   = qmi_hw->m[0].rcmd;
+    flash_range_program(offs, data, count);
+    qmi_hw->m[0].timing = timing;
+    qmi_hw->m[0].rfmt   = rfmt;
+    qmi_hw->m[0].rcmd   = rcmd;
+    __asm volatile ("dsb; isb" ::: "memory");
+}
+#else
+#define flash_erase_keep_qmi flash_range_erase
+#define flash_program_keep_qmi flash_range_program
+#endif
+
 bool filebrowser_loadfile(const char pathname[256]) {
     UINT bytes_read = 0;
     FIL file;
@@ -226,7 +297,13 @@ bool filebrowser_loadfile(const char pathname[256]) {
     FILINFO fileinfo;
     f_stat(pathname, &fileinfo);
     rom_size = fileinfo.fsize;
+#if defined(PICO_PC) || defined(BOARD_Z0)
+    /* The ROM goes right after the firmware; the top 512 KB of the flash
+     * stay untouched (pico-launcher lives in the last 260 KB). */
+    if (FLASH_TARGET_OFFSET + fileinfo.fsize > PICO_FLASH_SIZE_BYTES - (512u << 10)) {
+#else
     if ((16384 - 64) << 10 < fileinfo.fsize) {
+#endif
         draw_text("ERROR: ROM too large! Canceled!!", window_x + 1, window_y + 2, 13, 1);
         sleep_ms(5000);
         return false;
@@ -240,7 +317,8 @@ bool filebrowser_loadfile(const char pathname[256]) {
     multicore_lockout_start_blocking();
     auto flash_target_offset = FLASH_TARGET_OFFSET;
     const uint32_t ints = save_and_disable_interrupts();
-    flash_range_erase(flash_target_offset, fileinfo.fsize);
+    /* erase whole sectors: the ROM size is rarely a multiple of 4 KB */
+    flash_erase_keep_qmi(flash_target_offset, (fileinfo.fsize + FLASH_SECTOR_SIZE - 1) & ~(FLASH_SECTOR_SIZE - 1));
     restore_interrupts(ints);
 
     if (FR_OK == f_open(&file, pathname, FA_READ)) {
@@ -251,7 +329,7 @@ bool filebrowser_loadfile(const char pathname[256]) {
 
             if (bytes_read) {
                 const uint32_t ints = save_and_disable_interrupts();
-                flash_range_program(flash_target_offset, buffer, FLASH_PAGE_SIZE);
+                flash_program_keep_qmi(flash_target_offset, buffer, FLASH_PAGE_SIZE);
                 restore_interrupts(ints);
 
                 gpio_put(PICO_DEFAULT_LED_PIN, flash_target_offset >> 13 & 1);
@@ -478,7 +556,7 @@ typedef struct __attribute__((__packed__)) {
 } MenuItem;
 
 int save_slot = 0;
-uint16_t frequencies[] = {378, 396, 404, 408, 412, 416, 420, 424, 432, 444, 460};
+uint16_t frequencies[] = {252, 378, 396, 404, 408, 412, 416, 420, 424, 432, 444, 460, 504};
 
 bool overclock() {
 #if !PICO_RP2040
@@ -489,12 +567,12 @@ bool overclock() {
     *qmi_m0_timing = 0x60007204;
     bool res = set_sys_clock_khz(frequencies[frequency_index] * KHZ, 0);
     *qmi_m0_timing = 0x60007303;
-    graphics_set_mode(TEXTMODE_DEFAULT);
+    set_mode(TEXTMODE_DEFAULT);
     return res;
 #else
     hw_set_bits(&vreg_and_chip_reset_hw->vreg, VREG_AND_CHIP_RESET_VREG_VSEL_BITS);
     sleep_ms(10);
-    graphics_set_mode(TEXTMODE_DEFAULT);
+    set_mode(TEXTMODE_DEFAULT);
     return set_sys_clock_khz(frequencies[frequency_index] * KHZ, true);
 #endif
 }
@@ -588,7 +666,7 @@ const MenuItem menu_items[] = {
 #endif
     {
         "Overclocking: %s MHz", ARRAY, &frequency_index, &overclock, count_of(frequencies) - 1,
-        {"378", "396", "404", "408", "412", "416", "420", "424", "432", "444", "460"}
+        {"252", "378", "396", "404", "408", "412", "416", "420", "424", "432", "444", "460", "504"}
     },
     {"Press START / Enter to apply", NONE},
     {"Reset to ROM select", ROM_SELECT},
@@ -598,7 +676,7 @@ const MenuItem menu_items[] = {
 
 void menu() {
     bool exit = false;
-    graphics_set_mode(TEXTMODE_DEFAULT);
+    set_mode(TEXTMODE_DEFAULT);
     char footer[TEXTMODE_COLS];
     snprintf(footer, TEXTMODE_COLS, ":: %s ::", PICO_PROGRAM_NAME);
     draw_text(footer, TEXTMODE_COLS / 2 - strlen(footer) / 2, 0, 11, 1);
@@ -687,7 +765,7 @@ void menu() {
         sleep_ms(125);
     }
 
-    graphics_set_mode(GRAPHICSMODE_DEFAULT);
+    set_mode(GRAPHICSMODE_DEFAULT);
     save_config();
 }
 
@@ -696,6 +774,9 @@ void __time_critical_func(render_core)() {
     multicore_lockout_victim_init();
 
     ps2kbd.init_gpio();
+#ifdef KBDUSB
+    tuh_init(BOARD_TUH_RHPORT);
+#endif
     nespad_begin(clock_get_hz(clk_sys) / 1000, NES_GPIO_CLK, NES_GPIO_DATA, NES_GPIO_LAT);
 
     graphics_init();
@@ -728,8 +809,9 @@ void __time_critical_func(render_core)() {
 
         tick = time_us_64();
 
-        // tuh_task();
-        // hid_app_task();
+#ifdef KBDUSB
+        tuh_task();
+#endif
         tight_loop_contents();
     }
 
@@ -767,18 +849,18 @@ int __time_critical_func(main)() {
     gAudioBuffer = (uint16_t *)audio_buffer;
     gAudioEnabled = true;
     gPrimaryFrameBuffer = (uint8_t *) SCREEN;
-    for (int i = 0; i < 256; i++) {
-        graphics_set_palette(i, RGB888(
-                                 (((i & 0xe0) >> 4) * 16),
-                                 (((i & 0x1C) >> 1) * 16),
-                                 (((i & 0x03) << 2) * 16)
-                             ));
+    /* slot 255 is the border/background colour (graphics_set_bgcolor) */
+    for (int i = 0; i < 255; i++) {
+        graphics_set_palette(i, lynx_color(i));
     }
+#ifdef HDMI
+    set_text_colors(); // the ROM browser comes first
+#endif
     while (true) {
-        graphics_set_mode(TEXTMODE_DEFAULT);
+        set_mode(TEXTMODE_DEFAULT);
         filebrowser(HOME_DIR, "lnx,com,o");
         lynx = new CSystem((uint8_t *) rom, rom_size, MIKIE_PIXEL_FORMAT_16BPP_565, HANDY_AUDIO_SAMPLE_FREQ);
-        graphics_set_mode(GRAPHICSMODE_DEFAULT);
+        set_mode(GRAPHICSMODE_DEFAULT);
 
 
         frame = 0;
