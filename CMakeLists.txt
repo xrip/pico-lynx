@@ -18,8 +18,8 @@ set(PICO_PLATFORM "rp2350" CACHE STRING "Chip type")
 #set(PICO_PLATFORM "rp2040" CACHE STRING "Chip type")
 #set(PICO_BOARD "murmulator" CACHE STRING "Board type")
 #set(PICO_BOARD "olimex-pico-pc" CACHE STRING "Board type")
-#set(PICO_BOARD "murmulator2" CACHE STRING "Board type")
-set(PICO_BOARD "waveshare_rp2350_pizero" CACHE STRING "Board type")
+set(PICO_BOARD "murmulator2" CACHE STRING "Board type")
+#set(PICO_BOARD "waveshare_rp2350_pizero" CACHE STRING "Board type")
 
 option(USB_HID "USB keyboard on the native USB port (TinyUSB host)" OFF)
 if(${PICO_BOARD} MATCHES "waveshare_rp2350_pizero")
@@ -31,6 +31,14 @@ if(${PICO_BOARD} MATCHES "waveshare_rp2350_pizero")
 endif()
 if(${PICO_BOARD} MATCHES "olimex-pico-pc")
     set(USB_HID ON CACHE BOOL "USB keyboard on the native USB port (TinyUSB host)" FORCE)
+endif()
+if(${PICO_BOARD} MATCHES "murmulator2")
+    # Murmulator 2.0 + Pico 2 (m2p2 kit): USB keyboard on the Pico 2 port (PS/2 on
+    # GP2/GP3 keeps working). Defaults HDMI + I2S (TDA1387 DAC); -DHDMI=OFF builds
+    # VGA, -DI2S=OFF builds PWM (GP10/GP11).
+    set(USB_HID ON CACHE BOOL "USB keyboard on the native USB port (TinyUSB host)" FORCE)
+#    set(HDMI ON CACHE BOOL "Enable HDMI display")
+#    set(I2S ON CACHE BOOL "Enable I2S sound")
 endif()
 include(pico_sdk_import.cmake)
 
@@ -49,14 +57,12 @@ option(m1p2launcher "Enable m1p2-launcher support" OFF)
 endif()
 
 #set(m1p2launcher ON)
-if (NOT ${PICO_BOARD} MATCHES "olimex-pico-pc") # the PICO-PC audio jack is PWM
-set(I2S ON)
-endif()
 #set(TFT ON)
 #set(ILI9341 ON)
 #set(HDMI ON)
 #set(TV ON)
 #set(SOFTTV ON)
+#set(I2S ON)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
